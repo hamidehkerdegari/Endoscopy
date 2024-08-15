@@ -11,4 +11,4 @@ def get_dataloader(root_dir, batch_size=32, num_workers=4, shuffle=True, split_r
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
-    return train_loader, val_loader
+    return train_loader, val_loader, train_dataset  # Return train_dataset for class weights calculation

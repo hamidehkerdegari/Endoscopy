@@ -1,6 +1,7 @@
 import torch
 from src.data.dataloader import get_dataloader
 from src.transforms.transforms import get_transforms
+from src.models.model import VGGClassifier  # Ensure you import the correct model class
 
 def evaluate_model(model, data_loader):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -11,8 +12,8 @@ def evaluate_model(model, data_loader):
     with torch.no_grad():
         for inputs, labels in data_loader:
             inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            _, preds = torch.max(outputs, 1)
+            outputs = model(inputs).squeeze()  # For binary classification, output is a single value per input
+            preds = (outputs > 0.5).float()  # Convert probabilities to binary predictions with a threshold of 0.5
             running_corrects += torch.sum(preds == labels.data)
 
     accuracy = running_corrects.double() / len(data_loader.dataset)
@@ -26,9 +27,11 @@ def main():
     transform = get_transforms()
     _, val_loader = get_dataloader(root_dir, batch_size, num_workers, transform=transform)
 
-    model = SimpleCNN(num_classes=3)
-    model.load_state_dict(torch.load('path/to/your/model.pth'))
+    # Initialize the binary classification model
+    model = VGGClassifier(pretrained=False)
+    model.load_state_dict(torch.load('path/to/your/binary_classification_model.pth'))
 
+    # Evaluate the model
     evaluate_model(model, val_loader)
 
 if __name__ == "__main__":

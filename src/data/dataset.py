@@ -31,7 +31,9 @@ class EndoscopyDataset(Dataset):
                     print(f"Found file: {file_name}")
                     if file_name.lower().endswith('.tif'):
                         self.images.append(os.path.join(class_dir, file_name))
-                        self.labels.append(self.classes.index(label))
+                        # Convert labels: 1 for 'IM', 0 for 'GA' and 'Normal'
+                        binary_label = 1 if label == 'IM' else 0
+                        self.labels.append(binary_label)
 
         if not self.images:
             raise FileNotFoundError("No .TIF images found in the dataset directories.")
@@ -76,9 +78,6 @@ class EndoscopyDataset(Dataset):
         # Combine the two masks using bitwise AND
         combined_mask = cv2.bitwise_and(mask1, mask2)
 
-        # Invert the mask so the circle and rectangle are black
-        # combined_mask = cv2.bitwise_not(combined_mask)
-
         # Convert mask to 3 channels
         combined_mask = np.stack([combined_mask] * 3, axis=-1)
 
@@ -95,9 +94,6 @@ class EndoscopyDataset(Dataset):
 
         # Mask the image to retain only the circular region and apply rectangular masks
         image = self.mask_circle_and_strip(image)
-
-        # Normalize the image between 0 and 1
-        # image = self.normalize_image(image)
 
         if self.transform:
             image = self.transform(image)
@@ -122,8 +118,13 @@ class EndoscopyDataset(Dataset):
             image = self.mask_circle_and_strip(image)  # Mask the image for visualization
             if isinstance(image, Image.Image):
                 image = np.array(image) / 255.0  # Normalize for visualization
+
+            # Convert label to human-readable form
+            label_text = 'IM' if labels[i] == 1 else 'Not IM'
+            
+            # Display image and label
             ax.imshow(image)
-            ax.set_title(f"Label: {self.classes[labels[i]]}")
+            ax.set_title(f"Label: {label_text}")
             ax.axis('off')
 
         plt.tight_layout()
