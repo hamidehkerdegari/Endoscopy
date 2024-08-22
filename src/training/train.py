@@ -1,16 +1,15 @@
 import numpy as np
 import torch.optim as optim
-from src.data.dataloader import get_dataloader
-from src.models.model import VGGClassifier
-from src.models.model import SimpleCNN
-from src.data.transforms import get_transforms
-from src.training.utils import train_model
 from sklearn.utils.class_weight import compute_class_weight
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.data.dataloader import get_dataloader
+from src.models.model import VGGClassifier, SimpleCNN
+from src.data.transforms import get_transforms
+from src.training.utils import train_model
 
 def plot_metrics(history):
     epochs = range(1, len(history['train_loss']) + 1)
@@ -41,39 +40,57 @@ def plot_metrics(history):
 
 def main():
     root_dir = '/home/hamideh/Dataset/Chinese_dataset/gastritis-data/LCI'
-    batch_size = 16
+    augment_dir = 'data/Augmented'  # Directory to save augmented images
+    batch_size = 64
     num_workers = 4
     num_epochs = 50
     learning_rate = 0.0001
+    n_folds = 1  # Number of folds, including one original and four augmented
 
+    # Define the transformation pipeline
     transform = get_transforms()
 
-    # Get dataloaders and the train_dataset
-    train_loader, val_loader, train_dataset = get_dataloader(root_dir, batch_size, num_workers, transform=transform)
+    # Train the model over multiple epochs
+    for epoch in range(num_epochs):
+        print(f"Starting epoch {epoch+1}/{num_epochs}...")
 
-    # Compute class weights based on the training dataset
-    train_labels = [train_dataset[i][1] for i in range(len(train_dataset))]
-    class_weights = compute_class_weight('balanced', classes=np.array([0, 1]), y=train_labels)
-    class_weights = torch.tensor(class_weights, dtype=torch.float)
+        # Get dataloaders with the current epoch
+        train_loader, val_loader, train_dataset = get_dataloader(
+            root_dir=root_dir,
+            augment_dir=augment_dir,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            transform=transform,
+            n_folds=n_folds,
+            epoch=epoch
+        )
 
-    # Use class weights to compute pos_weight for BCEWithLogitsLoss
-    pos_weight = class_weights[1] / class_weights[0]
+        # Compute class weights based on the training dataset
+        train_labels = [train_dataset[i][1] for i in range(len(train_dataset))]
+        class_weights = compute_class_weight('balanced', classes=np.array([0, 1]), y=train_labels)
+        class_weights = torch.tensor(class_weights, dtype=torch.float)
 
-    # Define the model and loss function with weights
-    #model = SimpleCNN()
-    model = VGGClassifier(pretrained=True)
-    
-    criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        # Use class weights to compute pos_weight for BCEWithLogitsLoss
+        pos_weight = class_weights[1] / class_weights[0]
 
-    # Train the model
-    trained_model, history = train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs)
-    torch.save(trained_model.state_dict(), 'trained_vgg19_model.pth')
+        # Define the model and loss function with weights
+        # model = VGGClassifier(pretrained=True)
+        model = SimpleCNN()
+        
+        model.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+        
+        criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
+        # Train the model
+        trained_model, history = train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs=1)
 
-    # Plot the metrics after training
-    plot_metrics(history)
+        # Save the model checkpoint after each epoch
+        torch.save(trained_model.state_dict(), f'trained_vgg19_model_epoch_{epoch+1}.pth')
+
+        # Plot the metrics after training
+        if epoch == num_epochs - 1:  # Plot only after the last epoch
+            plot_metrics(history)
 
 if __name__ == "__main__":
     main()
-

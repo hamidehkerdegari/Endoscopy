@@ -28,20 +28,43 @@ class SimpleCNN(nn.Module):
 
 
 
-#vgg19 classifier
+# #vgg19 classifier
+# class VGGClassifier(nn.Module):
+#     def __init__(self, pretrained=True, dropout_rate=0.5):
+#         super(VGGClassifier, self).__init__()
+#         self.vgg19 = models.vgg19(pretrained=pretrained)
+
+#         # Modify the classifier to have one dense layer with dropout
+#         self.vgg19.classifier = nn.Sequential(
+#             nn.Dropout(p=dropout_rate),  # Dropout before the dense layer
+#             nn.Linear(25088, 1)  # Single output neuron for binary classification
+#         )
+
+#     def forward(self, x):
+#         x = self.vgg19(x)
+#         return x  # Logits output for BCEWithLogitsLoss
+
+
+
 class VGGClassifier(nn.Module):
     def __init__(self, pretrained=True, dropout_rate=0.5):
         super(VGGClassifier, self).__init__()
-        self.vgg19 = models.vgg19(pretrained=pretrained)
-
-        # Modify the classifier to have one dense layer with dropout
-        self.vgg19.classifier = nn.Sequential(
+        self.vgg19_features = models.vgg19(pretrained=pretrained).features  # Only the feature extractor
+        self.avgpool = nn.AdaptiveAvgPool2d((7, 7))  # Adaptive average pooling to match the input size
+        self.flatten = nn.Flatten()
+        
+        # Custom classifier that takes the embeddings as input
+        self.classifier = nn.Sequential(
             nn.Dropout(p=dropout_rate),  # Dropout before the dense layer
-            nn.Linear(25088, 1)  # Single output neuron for binary classification
+            nn.Linear(512 * 7 * 7, 1)  # Single output neuron for binary classification
         )
 
+
     def forward(self, x):
-        x = self.vgg19(x)
+        x = self.vgg19_features(x)  # Pass through the VGG19 feature extractor
+        x = self.avgpool(x)  # Apply average pooling
+        x = self.flatten(x)  # Flatten the output to a 1D vector
+        x = self.classifier(x)  # Pass through the custom classifier
         return x  # Logits output for BCEWithLogitsLoss
 
 

@@ -24,14 +24,11 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
             loss.backward()
             optimizer.step()
 
-            running_loss += loss.item()
-
-            # For binary classification, apply a threshold to outputs
-            predicted = (outputs >= 0.5).float()  # Use threshold 0.5 to get binary predictions
+            running_loss += loss.item() * inputs.size(0)  # Accumulate loss with batch size
             total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+            correct += (outputs >= 0.5).float().eq(labels).sum().item()
 
-        train_loss = running_loss / len(train_loader)
+        train_loss = running_loss / len(train_loader.dataset)  # Average by total samples
         train_accuracy = correct / total
 
         history['train_loss'].append(train_loss)
@@ -51,13 +48,12 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
 
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
-                val_loss += loss.item()
+                val_loss += loss.item() * inputs.size(0)  # Accumulate loss with batch size
 
-                predicted = (outputs >= 0.5).float()
                 total += labels.size(0)
-                correct += (predicted == labels).sum().item()
+                correct += (outputs >= 0.5).float().eq(labels).sum().item()
 
-        val_loss = val_loss / len(val_loader)
+        val_loss = val_loss / len(val_loader.dataset)  # Average by total samples
         val_accuracy = correct / total
 
         history['val_loss'].append(val_loss)

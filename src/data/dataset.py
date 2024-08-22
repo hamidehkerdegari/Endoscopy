@@ -1,45 +1,75 @@
 import os
+import torch
+import random
+import hashlib
+import numpy as np
 import cv2
 from PIL import Image
-import numpy as np
-import torch
 from torch.utils.data import Dataset
+from torchvision.transforms.functional import to_pil_image, to_tensor
 import matplotlib.pyplot as plt
 
 class EndoscopyDataset(Dataset):
-    def __init__(self, root_dir, transform=None):
+    def __init__(self, root_dir, augment_dir, transform=None, n_folds=2, epoch=0):
         """
         Args:
             root_dir (string): Directory with all the images.
+            augment_dir (string): Directory to save or load augmented images.
             transform (callable, optional): Optional transform to be applied on a sample.
+            n_folds (int): Number of folds for augmentation. One fold will be original images, 
+                           and the remaining n-1 will be augmented images.
+            epoch (int): Current epoch number to determine whether to generate or load images.
         """
         self.root_dir = root_dir
+        self.augment_dir = augment_dir
         self.transform = transform
+        self.n_folds = n_folds
+        self.epoch = epoch
         self.classes = ['IM', 'GA', 'Normal']
         self.views = ['Antrum', 'Angle', 'Cardia', 'Fundus', 'Body']
         self.images = []
         self.labels = []
 
+        # Load and store all images and their labels
         for label in self.classes:
             for view in self.views:
                 class_dir = os.path.join(self.root_dir, label, view)
                 if not os.path.isdir(class_dir):
                     print(f"Directory {class_dir} does not exist, skipping.")
                     continue
-                print(f"Checking directory: {class_dir}")
                 for file_name in os.listdir(class_dir):
-                    print(f"Found file: {file_name}")
                     if file_name.lower().endswith('.tif'):
-                        self.images.append(os.path.join(class_dir, file_name))
-                        # Convert labels: 1 for 'IM', 0 for 'GA' and 'Normal'
+                        image_path = os.path.join(class_dir, file_name)
+                        self.images.append(image_path)
                         binary_label = 1 if label == 'IM' else 0
                         self.labels.append(binary_label)
 
         if not self.images:
             raise FileNotFoundError("No .TIF images found in the dataset directories.")
 
+    def _get_augment_filename(self, image_path, fold_idx):
+        """
+        Generate a unique filename for each augmented image based on the original image path
+        and the fold index.
+        """
+        # Hash the image path and fold index to create a unique filename
+        base_name = os.path.basename(image_path)
+        hash_val = hashlib.md5(f"{base_name}_{fold_idx}".encode()).hexdigest()
+        return os.path.join(self.augment_dir, f"{hash_val}.pt")
+
+    def _save_image(self, image, save_path):
+        """ Save the Tensor image to the specified path as a torch tensor file. """
+        if isinstance(image, torch.Tensor):
+            torch.save(image, save_path)
+        else:
+            raise TypeError("Expected a torch.Tensor object for saving.")
+
+    def _load_image(self, load_path):
+        """ Load the torch tensor image from the specified path. """
+        return torch.load(load_path)
+
     def __len__(self):
-        return len(self.images)
+        return len(self.images) * self.n_folds
 
     def mask_circle_and_strip(self, image):
         """
@@ -89,16 +119,48 @@ class EndoscopyDataset(Dataset):
         return Image.fromarray(masked_image)
 
     def __getitem__(self, idx):
-        image = Image.open(self.images[idx])
-        label = self.labels[idx]
+        # Determine the fold and the original index
+        original_idx = idx // self.n_folds
+        fold_idx = idx % self.n_folds
 
-        # Mask the image to retain only the circular region and apply rectangular masks
-        image = self.mask_circle_and_strip(image)
+        image_path = self.images[original_idx]
+        label = self.labels[original_idx]
+        aug_image_path = self._get_augment_filename(image_path, fold_idx)
+        
+        if self.epoch == 0 and not os.path.exists(aug_image_path):
+            # First epoch, generate and save image
+            image = Image.open(image_path)
+            image = self.mask_circle_and_strip(image)
+        
+            if fold_idx == 0:
+                # Original image (just resized)
+                if self.transform:  #TODO; Chech this logic
+                    image = self.transform.transforms[0](image)  # Apply resize only
+                    image = self.transform.transforms[3](image)  # Apply Normalize only
+                    image = self.transform.transforms[4](image)  # Apply Normalize only
+            else:
+                # Augmented image
+                if self.transform:
+                    random.seed(fold_idx)
+                    torch.manual_seed(fold_idx)
+                    image = self.transform(image)
+            # Ensure the loaded image is a tensor
+            if isinstance(image, Image.Image):
+                image = to_tensor(image)
+            self._save_image(image, aug_image_path)
+        else:
+            # Load the augmented image from disk
+            image = self._load_image(aug_image_path)
 
-        if self.transform:
-            image = self.transform(image)
+            # Ensure the loaded image is a tensor
+            if isinstance(image, Image.Image):
+                image = to_tensor(image)
+                
 
         return image, label
+
+
+
 
     def visualize_samples(self, num_samples=9, save_path='samples.png'):
         """
