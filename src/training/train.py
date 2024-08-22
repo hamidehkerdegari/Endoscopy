@@ -41,9 +41,9 @@ def plot_metrics(history):
 
 def main():
     root_dir = '/home/hamideh/Dataset/Chinese_dataset/gastritis-data/LCI'
-    batch_size = 32
+    batch_size = 16
     num_workers = 4
-    num_epochs = 2
+    num_epochs = 50
     learning_rate = 0.0001
 
     transform = get_transforms()
@@ -68,6 +68,8 @@ def main():
 
     # Train the model
     trained_model, history = train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs)
+    torch.save(trained_model.state_dict(), 'trained_vgg19_model.pth')
+
 
     # Plot the metrics after training
     plot_metrics(history)
